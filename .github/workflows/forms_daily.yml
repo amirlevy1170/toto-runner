@@ -51,3 +51,21 @@ jobs:
           git commit -m "Forms pipeline update $(date -u +%Y-%m-%d)"
           git pull --rebase origin master || true
           git push
+
+      - name: Sync to dashboard
+        if: ${{ secrets.DASHBOARD_TOKEN != '' }}
+        run: |
+          if [ ! -f repo/output/forms_predictions.json ]; then
+            echo "No forms_predictions.json found, skipping dashboard sync"
+            exit 0
+          fi
+          git clone https://x-access-token:${{ secrets.DASHBOARD_TOKEN }}@github.com/amirlevy1170/toto-dashboard.git dash
+          cd dash
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p public/data
+          cp ../repo/output/forms_predictions.json public/data/forms_predictions.json
+          git add public/data/forms_predictions.json
+          git diff --staged --quiet && echo "Dashboard already up to date" && exit 0
+          git commit -m "Update forms predictions $(date -u +%Y-%m-%d)"
+          git push
