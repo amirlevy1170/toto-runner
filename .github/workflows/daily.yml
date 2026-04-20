@@ -1,0 +1,80 @@
+name: Daily Toto Pipeline
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: toto-daily
+  cancel-in-progress: false
+
+jobs:
+  daily-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Clone TotoGenerator
+        run: |
+          git clone https://x-access-token:${{ secrets.TOTO_PAT }}@github.com/orgreens21/TotoGenerator.git repo
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: repo/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r repo/requirements.txt
+
+      - name: Create .env from secrets
+        run: |
+          cat > repo/.env << EOF
+          API_SPORTS_KEY=${{ secrets.API_SPORTS_KEY }}
+          EMAIL_SMTP_HOST=smtp.gmail.com
+          EMAIL_SMTP_PORT=587
+          EMAIL_SENDER=${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECIPIENT=${{ secrets.EMAIL_RECIPIENT }}
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+          TABPFN_TOKEN=${{ secrets.TABPFN_TOKEN }}
+          EOF
+
+      - name: Run daily pipeline
+        working-directory: repo
+        run: python -m pipeline daily --force
+
+      - name: Commit updated DB
+        working-directory: repo
+        run: |
+          git add output/toto.db output/latest_predictions.txt output/latest_predictions.html output/pipeline.log output/history/
+          git diff --staged --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Daily pipeline update $(date -u +%Y-%m-%d)"
+          git stash --include-untracked
+          git pull --rebase origin master
+          git stash pop || true
+          git push
+
+      - name: Sync JSON data to dashboard repo
+        env:
+          DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
+        run: |
+          if [ -z "$DASHBOARD_TOKEN" ]; then
+            echo "DASHBOARD_TOKEN not set, skipping dashboard sync"
+            exit 0
+          fi
+          git clone https://x-access-token:${DASHBOARD_TOKEN}@github.com/amirlevy1170/toto-dashboard.git /tmp/dashboard
+          mkdir -p /tmp/dashboard/public/data
+          cp repo/output/history/*.json /tmp/dashboard/public/data/
+          cd /tmp/dashboard
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data/
+          git diff --staged --quiet && echo "No new data" && exit 0
+          git commit -m "Sync prediction data $(date -u +%Y-%m-%d)"
+          git push

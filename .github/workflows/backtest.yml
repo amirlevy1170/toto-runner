@@ -1,0 +1,67 @@
+name: Backtest Walk-Forward (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_production_winners:
+        description: "Skip Phase 1 by reusing the daily pipeline's per-league winners (~2 hr instead of ~6+ hr)"
+        type: boolean
+        required: true
+        default: true
+
+concurrency:
+  group: toto-backtest
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Clone TotoGenerator
+        run: |
+          git clone https://x-access-token:${{ secrets.TOTO_PAT }}@github.com/orgreens21/TotoGenerator.git repo
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: repo/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r repo/requirements.txt
+
+      - name: Create .env from secrets
+        run: |
+          cat > repo/.env << EOF
+          API_SPORTS_KEY=${{ secrets.API_SPORTS_KEY }}
+          TABPFN_TOKEN=${{ secrets.TABPFN_TOKEN }}
+          EOF
+
+      - name: Run walk-forward backtest
+        working-directory: repo
+        env:
+          USE_PRODUCTION_WINNERS: ${{ inputs.use_production_winners }}
+        run: |
+          ARGS=""
+          if [ "$USE_PRODUCTION_WINNERS" = "true" ]; then
+            ARGS="--use-production-winners"
+          fi
+          echo "Running: python -m pipeline_draw.backtest_walkforward $ARGS"
+          python -m pipeline_draw.backtest_walkforward $ARGS
+
+      - name: Commit backtest results
+        working-directory: repo
+        run: |
+          git add output/backtest/
+          git diff --staged --quiet && echo "No backtest output to commit" && exit 0
+          git commit -m "Backtest walk-forward results $(date -u +%Y-%m-%d_%H-%M)"
+          git stash --include-untracked
+          git pull --rebase origin master
+          git stash pop || true
+          git push
