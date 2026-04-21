@@ -58,7 +58,7 @@ jobs:
           git push
 
       - name: Sync to dashboard
-        if: ${{ secrets.DASHBOARD_TOKEN != '' }}
+        if: success()
         run: |
           if [ ! -f repo/output/forms_predictions.json ]; then
             echo "No forms_predictions.json found, skipping dashboard sync"
