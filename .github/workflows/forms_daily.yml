@@ -1,8 +1,9 @@
 name: Forms Daily Pipeline
 
 on:
-  schedule:
-    - cron: '0 7 * * *'  # 10AM Israel time
+  workflow_run:
+    workflows: ["Daily Draw Pipeline"]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -13,6 +14,9 @@ jobs:
   forms-pipeline:
     runs-on: ubuntu-latest
     timeout-minutes: 300
+
+    # Skip if triggered by failed draw pipeline
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
 
     steps:
       - name: Clone TotoGenerator
