@@ -38,10 +38,11 @@ jobs:
 
       - name: Create .env from secrets
         run: |
-          cat > repo/.env << EOF
+          cat > repo/.env <<'ENVEOF'
           API_SPORTS_KEY=${{ secrets.API_SPORTS_KEY }}
           TABPFN_TOKEN=${{ secrets.TABPFN_TOKEN }}
-          EOF
+          ENVEOF
+          sed -i 's/^[[:space:]]*//' repo/.env
 
       - name: Run walk-forward backtest
         working-directory: repo

@@ -36,7 +36,7 @@ jobs:
 
       - name: Create .env from secrets
         run: |
-          cat > repo/.env << EOF
+          cat > repo/.env <<'ENVEOF'
           API_SPORTS_KEY=${{ secrets.API_SPORTS_KEY }}
           EMAIL_SMTP_HOST=smtp.gmail.com
           EMAIL_SMTP_PORT=587
@@ -44,7 +44,8 @@ jobs:
           EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECIPIENT=${{ secrets.EMAIL_RECIPIENT }}
           TABPFN_TOKEN=${{ secrets.TABPFN_TOKEN }}
-          EOF
+          ENVEOF
+          sed -i 's/^[[:space:]]*//' repo/.env
 
       - name: Run draw pipeline
         working-directory: repo
