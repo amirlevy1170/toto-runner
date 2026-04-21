@@ -47,7 +47,7 @@ jobs:
       - name: Push results
         working-directory: repo
         run: |
-          git add output/toto.db output/forms_predictions.json
+          git add output/toto.db output/forms_predictions.json output/forms/
           git diff --staged --quiet && echo "No changes to commit" && exit 0
           git commit -m "Forms pipeline update $(date -u +%Y-%m-%d)"
           git pull --rebase origin master || true
@@ -64,9 +64,10 @@ jobs:
           cd dash
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          mkdir -p public/data
+          mkdir -p public/data/forms
           cp ../repo/output/forms_predictions.json public/data/forms_predictions.json
-          git add public/data/forms_predictions.json
+          cp ../repo/output/forms/*.json public/data/forms/ 2>/dev/null || true
+          git add public/data/forms_predictions.json public/data/forms/
           git diff --staged --quiet && echo "Dashboard already up to date" && exit 0
           git commit -m "Update forms predictions $(date -u +%Y-%m-%d)"
           git push
