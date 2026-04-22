@@ -38,9 +38,6 @@ jobs:
           API_SPORTS_KEY=${{ secrets.API_SPORTS_KEY }}
           EMAIL_SMTP_HOST=smtp.gmail.com
           EMAIL_SMTP_PORT=587
-          EMAIL_SENDER=${{ secrets.EMAIL_SENDER }}
-          EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}
-          EMAIL_RECIPIENT=${{ secrets.EMAIL_RECIPIENT }}
           GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
           TABPFN_TOKEN=${{ secrets.TABPFN_TOKEN }}
           ENVEOF
@@ -48,7 +45,17 @@ jobs:
 
       - name: Run daily pipeline
         working-directory: repo
-        run: python -m pipeline daily --force
+        env:
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+          EMAIL_SMTP_HOST: smtp.gmail.com
+          EMAIL_SMTP_PORT: '587'
+        run: |
+          echo "EMAIL_SENDER set: ${EMAIL_SENDER:+yes} (${#EMAIL_SENDER} chars)"
+          echo "EMAIL_PASSWORD set: ${EMAIL_PASSWORD:+yes} (${#EMAIL_PASSWORD} chars)"
+          echo "EMAIL_RECIPIENT set: ${EMAIL_RECIPIENT:+yes} (${#EMAIL_RECIPIENT} chars)"
+          python -m pipeline daily --force
 
       - name: Commit updated DB
         working-directory: repo
