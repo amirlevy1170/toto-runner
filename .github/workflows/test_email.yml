@@ -1,0 +1,35 @@
+name: Email Smoke Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  email-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Clone TotoGenerator
+        run: |
+          git clone --depth 1 https://x-access-token:${{ secrets.TOTO_PAT }}@github.com/orgreens21/TotoGenerator.git repo
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install minimal deps
+        run: pip install python-dotenv
+
+      - name: Send test email
+        working-directory: repo
+        env:
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+          EMAIL_SMTP_HOST: smtp.gmail.com
+          EMAIL_SMTP_PORT: '587'
+        run: |
+          echo "EMAIL_SENDER set: ${EMAIL_SENDER:+yes} (${#EMAIL_SENDER} chars)"
+          echo "EMAIL_PASSWORD set: ${EMAIL_PASSWORD:+yes} (${#EMAIL_PASSWORD} chars)"
+          echo "EMAIL_RECIPIENT set: ${EMAIL_RECIPIENT:+yes} (${#EMAIL_RECIPIENT} chars)"
+          python scripts/send_test_email.py
