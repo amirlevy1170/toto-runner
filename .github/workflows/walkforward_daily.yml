@@ -1,0 +1,84 @@
+name: Walk-Forward Daily Pipeline
+
+on:
+  workflow_run:
+    workflows: ["Forms Daily Pipeline"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: toto-walkforward-pipeline
+  cancel-in-progress: false
+
+jobs:
+  walkforward-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    # Skip if triggered by failed forms pipeline
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Clone TotoGenerator
+        run: |
+          git clone https://x-access-token:${{ secrets.TOTO_PAT }}@github.com/orgreens21/TotoGenerator.git repo
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: repo/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r repo/requirements.txt
+
+      - name: Create .env
+        run: |
+          cat > repo/.env <<'ENVEOF'
+          API_SPORTS_KEY=${{ secrets.API_SPORTS_KEY }}
+          TABPFN_TOKEN=${{ secrets.TABPFN_TOKEN }}
+          ENVEOF
+          sed -i 's/^[[:space:]]*//' repo/.env
+
+      - name: Run walk-forward pipeline
+        working-directory: repo
+        env:
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+          EMAIL_SMTP_HOST: smtp.gmail.com
+          EMAIL_SMTP_PORT: '587'
+        run: |
+          echo "EMAIL_SENDER set: ${EMAIL_SENDER:+yes} (${#EMAIL_SENDER} chars)"
+          python -m pipeline_walkforward --db output/toto.db
+
+      - name: Push results
+        working-directory: repo
+        run: |
+          git add output/walkforward/
+          git diff --staged --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Walk-forward pipeline update $(date -u +%Y-%m-%d)"
+          git pull --rebase origin master || true
+          git push
+
+      - name: Sync to dashboard
+        if: success()
+        run: |
+          if [ ! -f repo/output/walkforward/latest.json ]; then
+            echo "No walkforward output found, skipping dashboard sync"
+            exit 0
+          fi
+          git clone https://x-access-token:${{ secrets.DASHBOARD_TOKEN }}@github.com/amirlevy1170/toto-dashboard.git dash
+          cd dash
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p public/data/walkforward
+          cp ../repo/output/walkforward/*.json public/data/walkforward/ 2>/dev/null || true
+          git add public/data/walkforward/
+          git diff --staged --quiet && echo "Dashboard already up to date" && exit 0
+          git commit -m "Update walk-forward predictions $(date -u +%Y-%m-%d)"
+          git push
