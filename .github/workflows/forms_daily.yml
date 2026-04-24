@@ -46,7 +46,17 @@ jobs:
 
       - name: Run forms pipeline
         working-directory: repo
-        run: python scripts/forms_daily_pipeline.py --db output/toto.db
+        env:
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+          EMAIL_SMTP_HOST: smtp.gmail.com
+          EMAIL_SMTP_PORT: '587'
+        run: |
+          echo "EMAIL_SENDER set: ${EMAIL_SENDER:+yes} (${#EMAIL_SENDER} chars)"
+          echo "EMAIL_PASSWORD set: ${EMAIL_PASSWORD:+yes} (${#EMAIL_PASSWORD} chars)"
+          echo "EMAIL_RECIPIENT set: ${EMAIL_RECIPIENT:+yes} (${#EMAIL_RECIPIENT} chars)"
+          python scripts/forms_daily_pipeline.py --db output/toto.db
 
       - name: Push results
         working-directory: repo
