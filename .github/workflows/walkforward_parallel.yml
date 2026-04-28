@@ -1,13 +1,13 @@
-name: Walk-Forward Parallel (Experimental)
+name: Walk-Forward Parallel
 
-# Runs after the existing serial Walk-Forward Daily Pipeline succeeds.
-# Splits work per-league into a matrix and merges the shards. Outputs
-# go to NEW folders so we can compare side-by-side with the serial run
-# before any cutover. NO email is sent during this comparison phase.
+# Runs after the Forms Daily Pipeline succeeds (forms ingest + DB
+# update has completed). Splits work per-league into a matrix and
+# merges the shards into the canonical walkforward_parallel/ output
+# (now the single source of truth for the dashboard's WF page).
 
 on:
   workflow_run:
-    workflows: ["Walk-Forward Daily Pipeline"]
+    workflows: ["Forms Daily Pipeline"]
     types: [completed]
   workflow_dispatch:
 
