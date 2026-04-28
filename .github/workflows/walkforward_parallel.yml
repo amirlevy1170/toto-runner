@@ -37,11 +37,15 @@ jobs:
         working-directory: repo
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          from pipeline_walkforward.loader import open_ro, list_leagues
-          with open_ro("output/toto.db") as c:
-              leagues = list_leagues(c)
-          print(f"leagues={json.dumps(leagues)}")
+          import json, sqlite3
+          conn = sqlite3.connect("file:output/toto.db?mode=ro", uri=True)
+          rows = conn.execute(
+              "SELECT DISTINCT league FROM league_features "
+              "WHERE result IS NOT NULL AND date IS NOT NULL "
+              "ORDER BY league"
+          ).fetchall()
+          conn.close()
+          print(f"leagues={json.dumps([r[0] for r in rows])}")
           PY
 
   walkforward:
