@@ -1,0 +1,159 @@
+name: Ensemble Strategies Experiment
+
+# Manual experiment: shards `scripts/ensemble_train_shard.py` per scope,
+# then runs `scripts/ensemble_aggregate.py` over all partial pickles to
+# evaluate post-hoc ensemble strategies vs. the production single-best
+# tournament. Commits the report back to TotoGenerator under
+# output/experiments/ensemble_strategies/. Does NOT touch production
+# code or the dashboard.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: toto-ensemble-experiment
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      scopes: ${{ steps.list.outputs.scopes }}
+    steps:
+      - name: Clone TotoGenerator
+        run: |
+          git clone --depth 1 https://x-access-token:${{ secrets.TOTO_PAT }}@github.com/orgreens21/TotoGenerator.git repo
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: List scopes
+        id: list
+        working-directory: repo
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, sqlite3
+          conn = sqlite3.connect("file:output/toto.db?mode=ro", uri=True)
+          leagues = [r[0] for r in conn.execute(
+              "SELECT DISTINCT league FROM league_features "
+              "WHERE result IS NOT NULL AND date IS NOT NULL "
+              "ORDER BY league"
+          ).fetchall()]
+          conn.close()
+          scopes = ["all_leagues"] + leagues + ["Cups_Combined", "Nationals_Combined"]
+          print(f"scopes={json.dumps(scopes)}")
+          PY
+
+  shard:
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: ${{ fromJson(needs.discover.outputs.scopes) }}
+    steps:
+      - name: Clone TotoGenerator
+        run: |
+          git clone --depth 1 https://x-access-token:${{ secrets.TOTO_PAT }}@github.com/orgreens21/TotoGenerator.git repo
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: repo/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r repo/requirements.txt
+
+      - name: Create .env
+        run: |
+          cat > repo/.env <<'ENVEOF'
+          API_SPORTS_KEY=${{ secrets.API_SPORTS_KEY }}
+          TABPFN_TOKEN=${{ secrets.TABPFN_TOKEN }}
+          ENVEOF
+          sed -i 's/^[[:space:]]*//' repo/.env
+
+      - name: Run shard
+        working-directory: repo
+        env:
+          # Skip tabnet: PyTorch holds the GIL inside the C++ extension,
+          # so the SIGALRM-based per-fit watchdog cannot interrupt it.
+          # Keeps the matrix safe even if a single fit misbehaves.
+          ENSEMBLE_SKIP_MODELS: tabnet
+          ENSEMBLE_FIT_TIMEOUT: "180"
+        run: |
+          mkdir -p partial
+          SAFE_SCOPE="$(echo '${{ matrix.scope }}' | tr '/ ' '__')"
+          python scripts/ensemble_train_shard.py \
+            --scope '${{ matrix.scope }}' \
+            --out "partial/${SAFE_SCOPE}.pkl"
+          echo "SAFE_SCOPE=${SAFE_SCOPE}" >> "$GITHUB_ENV"
+
+      - name: Upload partial
+        uses: actions/upload-artifact@v4
+        with:
+          name: ensemble-partial-${{ env.SAFE_SCOPE }}
+          path: repo/partial/${{ env.SAFE_SCOPE }}.pkl
+          retention-days: 7
+
+  aggregate:
+    needs: shard
+    if: always() && needs.shard.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Clone TotoGenerator
+        run: |
+          git clone https://x-access-token:${{ secrets.TOTO_PAT }}@github.com/orgreens21/TotoGenerator.git repo
+          cd repo
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: repo/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r repo/requirements.txt
+
+      - name: Download partials
+        uses: actions/download-artifact@v4
+        with:
+          path: repo/partial
+          pattern: ensemble-partial-*
+          merge-multiple: true
+
+      - name: List partials
+        working-directory: repo
+        run: ls -la partial/ || echo "(no partials)"
+
+      - name: Aggregate
+        working-directory: repo
+        run: |
+          python scripts/ensemble_aggregate.py \
+            --in-dir partial \
+            --out-dir output/experiments/ensemble_strategies
+
+      - name: Push report to TotoGenerator
+        working-directory: repo
+        run: |
+          git add output/experiments/ensemble_strategies/
+          git diff --staged --quiet && echo "No changes" && exit 0
+          git commit -m "Ensemble strategies experiment $(date -u +%Y-%m-%d)"
+          git pull --rebase origin master || true
+          git push
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ensemble-experiment-report
+          path: repo/output/experiments/ensemble_strategies/
+          retention-days: 30
